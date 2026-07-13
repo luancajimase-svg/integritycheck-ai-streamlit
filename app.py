@@ -1,11 +1,10 @@
-import streamlit as tf
+import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
-# Configuración de la página del Dashboard
+# Configuración de la página del Dashboard (Debe ser lo primero)
 st.set_page_config(
     page_title="Plataforma de Analítica - Detección de Fraude Académico",
     page_icon="🛡️",
@@ -16,10 +15,9 @@ st.title("🛡️ Sistema Integral de Analítica y Detección de Fraude Académi
 st.markdown("### Monitoreo en Tiempo Real y Modelado Predictivo (PMV3)")
 st.write("---")
 
-# 1. Carga de Datos
+# 1. Carga de Datos Optimizada (Se guarda en caché)
 @st.cache_data
 def load_data():
-    # Intenta leer el archivo localmente (asegúrate de subir el CSV con este nombre a tu GitHub)
     try:
         df = pd.read_csv("part-00000-masivo (2).csv")
         return df
@@ -29,15 +27,25 @@ def load_data():
 
 df = load_data()
 
-if df is not None:
-    # --- SECCIÓN DE ENTRENAMIENTO DEL MODELO PREDICTIVO ---
-    # Separamos variables para entrenar un modelo rápido y mostrar métricas predictivas reales
-    X = df[['cambios_pestana', 'tiempo_examen_min', 'score_biometria', 'similitud_texto_porcentaje', 'intensidad_cambios']]
-    y = df['alerta_fraude']
+# 2. Entrenamiento del Modelo Optimizado (¡ESTO EVITA QUE SEA LENTO!)
+# Usamos cache_resource porque los modelos de Machine Learning son recursos mutables/complejos
+@st.cache_resource
+def train_predictive_model(_data):
+    # Separamos variables para entrenar
+    X = _data[['cambios_pestana', 'tiempo_examen_min', 'score_biometria', 'similitud_texto_porcentaje', 'intensidad_cambios']]
+    y = _data['alerta_fraude']
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    model = RandomForestClassifier(random_state=42)
+    
+    # Usamos n_jobs=-1 para usar todos los procesadores del servidor y acelerar el proceso inicial
+    model = RandomForestClassifier(random_state=42, n_jobs=-1, n_estimators=50) 
     model.fit(X_train, y_train)
+    return model
+
+if df is not None:
+    # Mostramos un mensaje temporal solo la primera vez que se entrena
+    with st.spinner("Inicializando inteligencia artificial y cargando gráficos... (Solo tardará la primera vez)"):
+        model = train_predictive_model(df)
     
     # --- SECCIÓN 1: 4 CARDS DE KPIs ---
     st.subheader("📊 Indicadores Clave de Rendimiento (KPIs)")
@@ -93,24 +101,24 @@ if df is not None:
     with col4:
         st.markdown("**Importancia de Características (Random Forest)**")
         importances = model.feature_importances_
-        features = X.columns
+        features = ['cambios_pestana', 'tiempo_examen_min', 'score_biometria', 'similitud_texto_porcentaje', 'intensidad_cambios']
         df_imp = pd.DataFrame({'Variable': features, 'Importancia': importances}).sort_values(by='Importancia', ascending=True)
         fig_imp = px.bar(df_imp, x='Importancia', y='Variable', orientation='h',
-                         title="¿Qué variables influyen más en la predicción?", color_discrete_sequence=['#3498db'])
+                         title="¿Qué variables influyen más?", color_discrete_sequence=['#3498db'])
         st.plotly_chart(fig_imp, use_container_width=True)
         
     with col5:
         st.markdown("**Matriz de Riesgo Predictivo**")
-        # Creamos una simulación de rangos de probabilidad
-        df['Probabilidad_Fraude'] = model.predict_proba(X)[:, 1]
+        # Obtenemos las probabilidades de fraude de forma veloz
+        X_all = df[['cambios_pestana', 'tiempo_examen_min', 'score_biometria', 'similitud_texto_porcentaje', 'intensidad_cambios']]
+        df['Probabilidad_Fraude'] = model.predict_proba(X_all)[:, 1]
         fig_box = px.box(df, x='alerta_fraude', y='Probabilidad_Fraude', 
                          title="Nivel de Certeza del Modelo IA", color='alerta_fraude',
                          color_discrete_map={0: '#2ecc71', 1: '#e74c3c'})
         st.plotly_chart(fig_box, use_container_width=True)
         
     with col6:
-        st.markdown("**Simulador de Alerta en Tiempo Real (Predicción Activa)**")
-        # Formulario interactivo para que el usuario ingrese datos y el modelo prediga
+        st.markdown("**Simulador de Alerta en Tiempo Real**")
         with st.form("predict_form"):
             val_cambios = st.number_input("Cambios de Pestaña", min_value=0, max_value=100, value=5)
             val_tiempo = st.number_input("Tiempo Examen (Min)", min_value=1, max_value=180, value=60)
@@ -118,7 +126,7 @@ if df is not None:
             val_sim = st.slider("% Similitud Texto", min_value=0.0, max_value=100.0, value=20.0)
             val_int = st.number_input("Intensidad de Cambios", min_value=0.0, max_value=20.0, value=1.5)
             
-            submit = st.form_submit_values = st.form_submit_button("Analizar Comportamiento")
+            submit = st.form_submit_button("Analizar Comportamiento")
             
             if submit:
                 input_data = [[val_cambios, val_tiempo, val_bio, val_sim, val_int]]
